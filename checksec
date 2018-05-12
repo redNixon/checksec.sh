@@ -1260,7 +1260,7 @@ do
           if [[ "$(find "$N" \( -perm -004000 -o -perm -002000 \) -type f -print)" ]]; then
               echo_message "\033[37;41m$2$N\033[m\n" ",$2$N\n" " filename='$2$N' />\n" ",\"filename\":\"$2$N\"}"
           else
-              echo_message "$tempdir/$N\n" ",$tempdir/$N\n" " filename='$tempdir/$N' />\n" ",\"filename\":\"$tempdir/$N\"}"
+              echo_message "$N\n" ",$N\n" " filename='$N' />\n" ",\"filename\":\"$N\"}"
           fi
          if [[ "$fdircount" == "$fdirtotal" ]]; then
           echo_message "" "" "" ""
