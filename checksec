@@ -302,18 +302,36 @@ filecheck() {
   # check for rpath / run path
   $debug && echo -e "\n***function filecheck->rpath"
   if $readelf -d "$1" 2>/dev/null | grep -q 'rpath'; then
-   echo_message '\033[31mRPATH    \033[m  ' 'RPATH,' ' rpath="yes"' '"rpath":"yes",'
+    if ($readelf -d "$1" 2>/dev/null | head -20 | grep -q 'RPATH' | cut -d'[' -f 2 | sed 's/.$//' |  cut -d':' -f 1 | stat -c %a 2>/dev/null) > 755; then
+        echo_message '\033[31mRW-RPATH    \033[m  ' 'RPATH,' ' rpath="yes"' '"rpath":"yes",'
+    else
+        echo_message '\033[31mRPATH    \033[m  ' 'RPATH,' ' rpath="yes"' '"rpath":"yes",'
+    fi
   else
    echo_message '\033[32mNo RPATH \033[m  ' 'No RPATH,' ' rpath="no"' '"rpath":"no",'
   fi
 
   $debug && echo -e "\n***function filecheck->runpath"
   if $readelf -d "$1" 2>/dev/null | grep -q 'runpath'; then
-   echo_message '\033[31mRUNPATH    \033[m  ' 'RUNPATH,' ' runpath="yes"' '"runpath":"yes",'
+    if ($readelf -d "$1" 2>/dev/null | head -20 | grep -q 'RUNPATH' | cut -d'[' -f 2 | sed 's/.$//' | cut -d':' -f 1 | stat -c %a 2>/dev/null) > 755; then
+        echo_message '\033[31mRW-RUNPATH    \033[m  ' 'RUNPATH,' ' runpath="yes"' '"runpath":"yes",'
+    else
+        echo_message '\033[31mRUNPATH    \033[m  ' 'RUNPATH,' ' rpath="yes"' '"rpath":"yes",'
+    fi
   else
    echo_message '\033[32mNo RUNPATH \033[m  ' 'No RUNPATH,' ' runpath="no"' '"runpath":"no",'
   fi
+  
+  # check for stripped symbols in the binary
+  SYM_cnt=' '
+  SYM_cnt=( $($readelf --symbols "$1" 2>/dev/null | grep '.symtab' | cut -d' ' -f5))
+  if $readelf --symbols "$1" 2>/dev/null | grep -q '.symtab'; then
+   echo_message "\033[31m$SYM_cnt Symbols\t" ${SYM_cnt},  "\033[m  ' 'SYMTABLES,' ' symtables="yes"' '"symtables":"yes","
 
+  else
+   echo_message '\033[32mNo Symbols     \033[m  ' 'SYMTABLES,' ' symtables="no"' '"symtables":"no",'
+  fi
+  
   # check for FORTIFY SOURCE
   $debug && echo "***function filecheck->fortify"
   if [[ -e /lib/libc.so.6 ]] ; then
@@ -522,6 +540,19 @@ nxcheck() {
   fi
 }
 
+#Check core dumps restricted?
+coredumpcheck() {
+        $debug && echo -e "\n***function coredumpcheck"
+        coreValue=$( grep -ic "hard core 0" /etc/security/limits.conf )
+        dumpableValue=$( grep -ic "fs.suid_dumpable = 0" /etc/sysctl.conf )
+        if [ $coreValue == 1 ] && [ $dumpableValue == 1 ]; then
+                echo_message '\033[32mRestricted\033[m\n\n' '' '' ''
+        else
+                echo_message '\033[31mNot Restricted\033[m\n\n' '' '' ''
+        fi
+}
+
+
 # check for kernel protection mechanisms
 kernelcheck() {
   $debug && echo "***function kernelcheck"
@@ -624,6 +655,13 @@ kernelcheck() {
       echo_message "\033[31mDisabled\033[m\n" "Disabled," " ro_kernel_data='no'" '"ro_kernel_data":"no",'
     fi
   fi
+
+echo_message "  Exec Shield:                            " """" ""
+        if grep -qi 'kernel.exec-shield = 1' /etc/sysctl.conf ; then
+                echo_message '\033[32mEnabled\033[m\n\n' '' '' ''
+        else
+                echo_message '\033[31mDisabled\033[m\n\n' '' '' ''
+        fi
 
   echo_message "  Hardened Usercopy:                      " "" "" ""
   if $kconfig | grep -qi 'CONFIG_HARDENED_USERCOPY=y'; then
@@ -1190,7 +1228,7 @@ do
       exit 1
     fi
     cd "$tempdir" || exit
-    echo_message "RELRO           STACK CANARY      NX            PIE             RPATH      RUNPATH      FORTIFY Checked         Total   Filename\n" '' "<dir name='$tempdir'>\n" "{ \"dir\": { \"name\":\"$tempdir\" },"
+    echo_message "RELRO           STACK CANARY      NX            PIE             RPATH      RUNPATH      Stripped       FORTIFY Checked         Total   Filename\n" '' "<dir name='$tempdir'>\n" "{ \"dir\": { \"name\":\"$tempdir\" },"
     fdircount=0
     fdirtotal=0
     for N in $(find $tempdir -type f); do
@@ -1283,6 +1321,8 @@ do
     aslrcheck
     echo_message "* Does the CPU support NX: " "" "<procs>" ""
     nxcheck
+    echo_message "* Core-Dumps access to all users: " "" "<procs>" ""
+    coredumpcheck
     echo_message "         COMMAND    PID RELRO           STACK CANARY            SECCOMP          NX/PaX        PIE                     FORTIFY\n" "" "" '{'
     lastpid=0
     currpid=0
