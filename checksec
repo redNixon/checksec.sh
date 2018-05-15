@@ -64,6 +64,7 @@ export LC_ALL="C"
 debug=false
 have_readelf=1
 verbose=false
+quiet=false
 format="cli"
 SCRIPT_NAME="checksec"
 SCRIPT_URL="https://github.com/slimm609/checksec.sh/raw/master/${SCRIPT_NAME}"
@@ -135,8 +136,8 @@ help() {
   echo
   echo "Options:"
   echo
-  echo "  --file (-f) <executable-file>"
-  echo "  --dir (-d) <directory> [-v]"
+  echo "  --file (-f) <executable-file> [-q]"
+  echo "  --dir (-d) <directory> [-q]"
   echo "  --proc (-p) <process name>"
   echo "  --proc-all (-pa)"
   echo "  --proc-libs (-pl) <process ID>"
@@ -260,14 +261,19 @@ filecheck() {
   # check for RELRO support
   $debug && echo "***function filecheck->RELRO"
   if $readelf -l "$1" 2>/dev/null | grep -q 'GNU_RELRO'; then
-    if $readelf -d "$1" 2>/dev/null | grep -q 'BIND_NOW'; then
-      echo_message '\033[32mFull RELRO   \033[m   ' 'Full RELRO,' '<file relro="full"' ' "file": { "relro":"full",'
-    else
-      echo_message '\033[33mPartial RELRO\033[m   ' 'Partial RELRO,' '<file relro="partial"' ' "file": { "relro":"partial",'
-    fi
+    echo_message '\033[32mRELRO        \033[m   ' 'RELRO,' '<file relro="yes"' ' "file": { "relro":"yes",'
   else
     echo_message '\033[31mNo RELRO     \033[m   ' 'No RELRO,' '<file relro="no"' ' "file": { "relro":"no",'
   fi
+
+  # check for BIND_NOW
+  $debug && echo -e "\n***function filecheck->bind_now"
+  if $readelf -d "$1" 2>/dev/null | grep -q 'BIND_NOW'; then
+   echo_message '\033[32mBIND_NOW      \033[m  ' 'BIND_NOW,' ' bind_now="no"' '"bind_now":"no",'
+  else
+   echo_message '\033[31mNO BIND       \033[m  ' 'NO BIND_NOW,' ' bind_now="yes"' '"bind_now":"yes",'
+  fi
+
 
   # check for stack canary support
   $debug && echo -e "\n***function filecheck->canary"
@@ -299,6 +305,7 @@ filecheck() {
     echo_message '\033[33mNot an ELF file\033[m   ' 'Not an ELF file,' ' pie="not_elf"' '"pie":"not_elf",'
   fi
 
+
   # check for rpath / run path
   $debug && echo -e "\n***function filecheck->rpath"
   if $readelf -d "$1" 2>/dev/null | grep -q 'rpath'; then
@@ -316,7 +323,7 @@ filecheck() {
     if ($readelf -d "$1" 2>/dev/null | head -20 | grep -q 'RUNPATH' | cut -d'[' -f 2 | sed 's/.$//' | cut -d':' -f 1 | stat -c %a 2>/dev/null) > 755; then
         echo_message '\033[31mRW-RUNPATH    \033[m  ' 'RUNPATH,' ' runpath="yes"' '"runpath":"yes",'
     else
-        echo_message '\033[31mRUNPATH    \033[m  ' 'RUNPATH,' ' rpath="yes"' '"rpath":"yes",'
+        echo_message '\033[31mRUNPATH    \033[m  ' 'RUNPATH,' ' runpath="yes"' '"runpath":"yes",'
     fi
   else
    echo_message '\033[32mNo RUNPATH \033[m  ' 'No RUNPATH,' ' runpath="no"' '"runpath":"no",'
@@ -1209,10 +1216,12 @@ do
     format="$2"
     shift 2
     ;;
-
   --dir|-d)
     if [[ "$3" = "-v" ]] ; then
       verbose=true
+    fi
+    if [[ "$3" = "-q" ]] ; then
+      quiet=true
     fi
     if [[ $have_readelf -eq 0 ]] ; then
       exit 1
@@ -1228,7 +1237,9 @@ do
       exit 1
     fi
     cd "$tempdir" || exit
-    echo_message "RELRO           STACK CANARY      NX            PIE             RPATH      RUNPATH      Stripped       FORTIFY Checked         Total   Filename\n" '' "<dir name='$tempdir'>\n" "{ \"dir\": { \"name\":\"$tempdir\" },"
+    if [[ "$quiet" = "false" ]] ; then
+        echo_message "RELRO           BIND_NOW         STACK CANARY      NX            PIE             RPATH      RUNPATH      Stripped       FORTIFY Checked         Total   Filename\n" '' "<dir name='$tempdir'>\n" "{ \"dir\": { \"name\":\"$tempdir\" },"
+    fi
     fdircount=0
     fdirtotal=0
     for N in $(find $tempdir -type f); do
@@ -1276,6 +1287,9 @@ do
     ;;
 
   --file|-f)
+    if [[ "$3" = "-q" ]] ; then
+      quiet=true
+    fi
     if [[ $have_readelf -eq 0 ]] ; then
       exit 1
     fi
@@ -1301,7 +1315,10 @@ do
       printf "\033[m\n"
       exit 1
     fi
-    echo_message "RELRO           STACK CANARY      NX            PIE             RPATH      RUNPATH\tFORTIFY\tFortified Fortifiable  FILE\n" '' '' '{'
+    if [[ "$quiet" = "false" ]] ; then
+        echo_message "RELRO           BIND_NOW         STACK CANARY      NX            PIE             RPATH      RUNPATH      Stripped       FORTIFY Checked         Total   Filename\n" '' "<dir name='$tempdir'>\n" "{ \"dir\": { \"name\":\"$tempdir\" },"
+    fi
+    # echo_message "RELRO           STACK CANARY      NX            PIE             RPATH      RUNPATH\tFORTIFY\tFortified Fortifiable  FILE\n" '' '' '{'
     filecheck "$2"
     if [[ "$(find "$2" \( -perm -004000 -o -perm -002000 \) -type f -print)" ]] ; then
       echo_message "\033[37;41m$2$N\033[m" ",$2$N" " filename='$2$N'/>\n" ",\"filename\":\"$2$N\" } }"
